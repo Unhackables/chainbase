@@ -74,8 +74,11 @@ namespace chainbase {
     *  Object ID type that includes the type of the object it references
     */
    template<typename T>
-   class oid {
+   class oid
+   {
       public:
+         typedef T object_type;
+
          oid( int64_t i = 0 ):_id(i){}
          const T& operator()( const database& db )const;
 
@@ -112,10 +115,11 @@ namespace chainbase {
    template<typename Constructor, typename Allocator> \
    OBJECT_TYPE( Constructor&& c, Allocator&&  ) { c(*this); }
 
-   template< typename value_type >
+   template< typename ValueType >
    class undo_state
    {
       public:
+         typedef ValueType                                         value_type;
          typedef typename value_type::id_type                      id_type;
          typedef allocator< std::pair<const id_type, value_type> > id_value_allocator_type;
          typedef allocator< id_type >                              id_allocator_type;
