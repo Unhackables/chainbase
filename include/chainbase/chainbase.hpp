@@ -212,6 +212,18 @@ namespace chainbase {
 
          const index_type& indices()const { return _indices; }
 
+         /**
+          * Get an undo state from the stack.
+          * Uses Python-style indexing, i.e. -1 is the last element of the stack, -2 is the second-to-last element, etc.
+          */
+         const undo_state_type& get_undo_state( int depth )const
+         {
+            int n = int( _stack.size() );
+            if(   depth >= 0 ) BOOST_THROW_EXCEPTION( std::out_of_range("Depth must be negative") );
+            if( n+depth <  0 ) BOOST_THROW_EXCEPTION( std::out_of_range("Undo state stack does not have sufficient depth") );
+            return _stack[n+depth];
+         }
+
          class session {
             public:
                session( session&& mv )
