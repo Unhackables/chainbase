@@ -521,6 +521,15 @@ namespace chainbase {
          SessionType _session;
    };
 
+   class index_extension
+   {
+      public:
+         index_extension() {}
+         virtual ~index_extension() {}
+   };
+
+   typedef std::vector< std::shared_ptr< index_extension > > index_extensions;
+
    class abstract_index
    {
       public:
@@ -538,9 +547,12 @@ namespace chainbase {
 
          virtual void remove_object( int64_t id ) = 0;
 
+         void add_index_extension( std::shared_ptr< index_extension > ext )  { _extensions.push_back( ext ); }
+         const index_extensions& get_index_extensions()  { return _extensions; }
          void* get()const { return _idx_ptr; }
       private:
-         void* _idx_ptr;
+         void*              _idx_ptr;
+         index_extensions   _extensions;
    };
 
    template<typename BaseIndex>
@@ -723,6 +735,15 @@ namespace chainbase {
             return *index_type_ptr( _index_map[index_type::value_type::type_id]->get() );
          }
 
+         template<typename MultiIndexType>
+         void add_index_extension( std::shared_ptr< index_extension > ext )
+         {
+            typedef generic_index<MultiIndexType> index_type;
+            assert( _index_map.size() > index_type::value_type::type_id );
+            assert( _index_map[index_type::value_type::type_id] );
+            _index_map[index_type::value_type::type_id]->add_index_extension( ext );
+         }
+
          template<typename MultiIndexType, typename ByIndex>
          auto get_index()const -> decltype( ((generic_index<MultiIndexType>*)( nullptr ))->indicies().template get<ByIndex>() ) {
             typedef generic_index<MultiIndexType> index_type;
@@ -839,6 +860,21 @@ namespace chainbase {
             }
 
             return callback();
+         }
+
+         template< typename IndexExtensionType, typename Lambda >
+         void for_each_index_extension( Lambda&& callback )const
+         {
+            for( const abstract_index* idx : _index_list )
+            {
+               const index_extensions& exts = idx->get_index_extensions();
+               for( std::shared_ptr< index_extension >& e : exts )
+               {
+                  std::shared_ptr< IndexExtensionType > e2 = std::dynamic_pointer_cast< IndexExtensionType >( e );
+                  if( e2 )
+                     callback( e2 );
+               }
+            }
          }
 
       private:
