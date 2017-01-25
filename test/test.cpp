@@ -134,10 +134,29 @@ BOOST_AUTO_TEST_CASE( open_and_create ) {
       db.wipe( temp );
       BOOST_REQUIRE( !bfs::exists( temp / "shared_memory.bin") );
 
+      bfs::remove_all( temp );
+
    } catch ( ... ) {
       bfs::remove_all( temp );
       throw;
    }
+}
+
+void  openDatabase(boost::filesystem::path temp){
+  chainbase::database db;
+  try
+  {
+    db.open( temp, database::read_write, 1024*1024*8 );
+    for(;;)
+    {
+      boost::this_thread::sleep(boost::posix_time::milliseconds(100));
+    }
+  } catch(boost::thread_interrupted&)
+  {
+    db.close();
+    return;
+  }
+
 }
 
 BOOST_AUTO_TEST_CASE( lock_test ) {
@@ -145,42 +164,48 @@ BOOST_AUTO_TEST_CASE( lock_test ) {
 
   try {
     std::cerr << temp.native() << " \n";
-
-    BOOST_TEST_MESSAGE( "Creating Databases");
+    BOOST_TEST_MESSAGE( "Creating Database in thread 1");
+    boost::thread t(&openDatabase, temp);
+    BOOST_TEST_MESSAGE( "Opening Database in thread 2");
     chainbase::database db, db2;
-    db.open( temp, database::read_write, 1024*1024*8 );
-    BOOST_CHECK_THROW(db2.open( temp, database::read_write ), bip::interprocess_exception);
+    BOOST_CHECK_THROW(db.open( temp, database::read_write ), boost::interprocess::interprocess_exception);
+    t.interrupt();
+    t.join();
+    db.open( temp, database::read_write );
+    db2.open( temp, database::read_only );
+    BOOST_CHECK_THROW(db2.with_write_lock([&](){}), std::logic_error);
+    db.close();
+    db2.close();
+    bfs::remove_all( temp );
   } catch ( ... ) {
       bfs::remove_all ( temp );
       throw;
   }
 }
 
+#include <fstream>
 BOOST_AUTO_TEST_CASE( schema_test ) {
   boost::filesystem::path temp = boost::filesystem::unique_path();
 
   try {
     std::cerr << temp.native() << " \n";
     auto abs_path = bfs::absolute( temp / "shared_memory.bin" );
-    BOOST_TEST_MESSAGE( "Creating Databases");
-    class database2 : chainbase::database
-    {
-      public:
-        void ruin_segments(boost::filesystem::absolute path) {
-          _segment.reset( new bip::managed_mapped_file( bip::create_only,
-                                                        path.generic_string().c_str(), shared_file_size
-                                                        ) );
-        }
-    };
 
-    database2 db;
+    BOOST_TEST_MESSAGE( "Creating Database");
+    chainbase::database db;
     db.open( temp, database::read_write, 1024*1024*8 );
-    db.ruin_segments(abs_path);
-    db.commit();
+    db.commit(1);
     db.close();
-    BOOST_CHECK_THROW(db.open( temp, database::read_write), std::runtime_error);
-
-
+    BOOST_TEST_MESSAGE( "Corrupting Database");
+    std::fstream abs_file(abs_path.generic_string().c_str());
+    if(!abs_file.is_open()) {
+      BOOST_THROW_EXCEPTION(std::runtime_error("Couldn't open 'shared_memory.bin'"));
+    }
+    abs_file.seekp(270, std::ios::beg);
+    abs_file.write("CORRUPTCORRUPTCORRUPTCORRUPT", 28);
+    abs_file.close();
+    BOOST_CHECK_THROW(db.open( temp, database::read_only), std::runtime_error);
+    bfs::remove_all( temp );
   } catch ( ... ) {
       bfs::remove_all ( temp );
       throw;
