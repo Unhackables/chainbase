@@ -130,15 +130,17 @@ namespace chainbase {
       _index_map.clear();
    }
 
-#ifdef CHAINBASE_CHECK_LOCKING
    void database::set_require_locking( bool enable_require_locking )
    {
+#ifdef CHAINBASE_CHECK_LOCKING
       _enable_require_locking = enable_require_locking;
+#endif
    }
 
-   void database::require_lock_fail( const char* lock_type )const
+#ifdef CHAINBASE_CHECK_LOCKING
+   void database::require_lock_fail( const char* method, const char* lock_type, const char* tname )const
    {
-      std::string err_msg = "require_" + std::string( lock_type ) + "_lock() failed";
+      std::string err_msg = "database::" + std::string( method ) + " require_" + std::string( lock_type ) + "_lock() failed on type " + std::string( tname );
       std::cerr << err_msg << std::endl;
       BOOST_THROW_EXCEPTION( std::runtime_error( err_msg ) );
    }
