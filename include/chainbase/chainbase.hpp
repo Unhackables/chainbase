@@ -675,6 +675,7 @@ namespace chainbase {
          }
 #endif
 
+
          struct session {
             public:
                session( session&& s ):_index_sessions( std::move(s._index_sessions) ),_revision( s._revision ){}
@@ -872,6 +873,10 @@ namespace chainbase {
              return get_mutable_index<index_type>().emplace( std::forward<Constructor>(con) );
          }
 
+         int get_current_lock(){
+           return _rw_manager->current_lock_num() % CHAINBASE_NUM_RW_LOCKS;
+         }
+
          template< typename Lambda >
          auto with_read_lock( Lambda&& callback, uint64_t wait_micro = 1000000 ) -> decltype( (*(Lambda*)nullptr)() )
          {
@@ -887,8 +892,7 @@ namespace chainbase {
             }
             else
             {
-
-               if( !lock.timed_lock( boost::posix_time::microsec_clock::local_time() + boost::posix_time::microseconds( wait_micro ) ) )
+               if( !lock.timed_lock( boost::get_system_time() + boost::posix_time::microseconds( wait_micro ) ) )
                   BOOST_THROW_EXCEPTION( std::runtime_error( "unable to acquire lock" ) );
             }
 
@@ -913,7 +917,7 @@ namespace chainbase {
             }
             else
             {
-               while( !lock.timed_lock( boost::posix_time::microsec_clock::local_time() + boost::posix_time::microseconds( wait_micro ) ) )
+               while( !lock.timed_lock( boost::get_system_time() + boost::posix_time::microseconds( wait_micro ) ) )
                {
                   _rw_manager->next_lock();
                   std::cerr << "Lock timeout, moving to lock " << _rw_manager->current_lock_num() << std::endl;
@@ -951,4 +955,3 @@ namespace chainbase {
    template<typename Object, typename... Args>
    using shared_multi_index_container = boost::multi_index_container<Object,Args..., chainbase::allocator<Object> >;
 }  // namepsace chainbase
-

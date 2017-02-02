@@ -40,7 +40,8 @@ CHAINBASE_SET_INDEX_TYPE( book, book_index )
 
 
 BOOST_AUTO_TEST_CASE( open_and_create ) {
-   boost::filesystem::path temp = boost::filesystem::unique_path();
+   boost::filesystem::path temp = boost::filesystem::temp_directory_path() / boost::filesystem::unique_path();
+
    try {
       std::cerr << temp.native() << " \n";
 
@@ -142,7 +143,8 @@ BOOST_AUTO_TEST_CASE( open_and_create ) {
    }
 }
 
-void  openDatabase(boost::filesystem::path temp){
+
+void  createDatabaseOne(boost::filesystem::path temp){
   chainbase::database db;
   try
   {
@@ -160,20 +162,38 @@ void  openDatabase(boost::filesystem::path temp){
 }
 
 BOOST_AUTO_TEST_CASE( lock_test ) {
-  boost::filesystem::path temp = boost::filesystem::unique_path();
+  boost::filesystem::path temp = boost::filesystem::temp_directory_path() / boost::filesystem::unique_path();
 
   try {
     std::cerr << temp.native() << " \n";
     BOOST_TEST_MESSAGE( "Creating Database in thread 1");
-    boost::thread t(&openDatabase, temp);
+    boost::thread t(&createDatabaseOne, temp);
     BOOST_TEST_MESSAGE( "Opening Database in thread 2");
     chainbase::database db, db2;
     BOOST_CHECK_THROW(db.open( temp, database::read_write ), boost::interprocess::interprocess_exception);
     t.interrupt();
     t.join();
     db.open( temp, database::read_write );
-    db2.open( temp, database::read_only );
-    BOOST_CHECK_THROW(db2.with_write_lock([&](){}), std::logic_error);
+    db2.open( temp, database::read_write );
+    db.with_write_lock( [&](){} );
+    BOOST_REQUIRE_EQUAL(db.get_current_lock(), 0 );
+
+    for(int i = 0; i<CHAINBASE_NUM_RW_LOCKS; i++)
+    {
+      db.with_write_lock( [&](){
+          BOOST_REQUIRE_EQUAL(db.get_current_lock(), i % CHAINBASE_NUM_RW_LOCKS);
+          BOOST_REQUIRE_EQUAL(db2.get_current_lock(), i % CHAINBASE_NUM_RW_LOCKS);
+          db2.with_write_lock([](){}, 10000);
+      });
+    }
+    for(int i = 0; i<CHAINBASE_NUM_RW_LOCKS; i++)
+    {
+      db.with_read_lock( [&](){
+          BOOST_REQUIRE_EQUAL(db.get_current_lock(), i % CHAINBASE_NUM_RW_LOCKS);
+          BOOST_REQUIRE_EQUAL(db2.get_current_lock(), i % CHAINBASE_NUM_RW_LOCKS);
+          db2.with_write_lock([](){}, 10000);
+      });
+    }
     db.close();
     db2.close();
     bfs::remove_all( temp );
@@ -185,7 +205,7 @@ BOOST_AUTO_TEST_CASE( lock_test ) {
 
 #include <fstream>
 BOOST_AUTO_TEST_CASE( schema_test ) {
-  boost::filesystem::path temp = boost::filesystem::unique_path();
+  boost::filesystem::path temp = boost::filesystem::temp_directory_path() / boost::filesystem::unique_path();
 
   try {
     std::cerr << temp.native() << " \n";
