@@ -170,6 +170,13 @@ BOOST_AUTO_TEST_CASE( lock_test ) {
    db2.close();
 }
 
+
+/*
+ * The following test finds the version string
+ * inserted by the compiler in the shared_memory.bin.
+ * It then corrupts the string and trips the
+ * environment_check warning.
+ */
 #include <fstream>
 BOOST_AUTO_TEST_CASE( schema_test )
 {
@@ -187,10 +194,27 @@ BOOST_AUTO_TEST_CASE( schema_test )
    std::fstream abs_file(abs_path.generic_string().c_str());
    if(!abs_file.is_open())
       BOOST_THROW_EXCEPTION(std::runtime_error("Couldn't open 'shared_memory.bin'"));
-
-   abs_file.seekp(270, std::ios::beg);
-   abs_file.write("CORRUPTCORRUPTCORRUPTCORRUPT", 28);
+   std::string file_content;
+   file_content.reserve(500);
+   char buffer[500];
+   std::streamsize chars_read;
+   while(abs_file.read(buffer, sizeof buffer), chars_read = abs_file.gcount())
+        file_content.append(buffer, chars_read);
+    const char* search_term = __VERSION__;
+    unsigned int search_term_size = strlen(search_term);
+    std::string::size_type location = 0;
+    for (std::string::size_type offset = 0, found_at; 500 > offset &&
+                  (found_at = file_content.find(search_term, offset)) !=
+                                                             std::string::npos;
+                  offset = found_at + search_term_size)
+                  location = found_at;
    abs_file.close();
-   BOOST_CHECK_THROW( db.open( temp.path, database::read_only), std::runtime_error);
+   abs_file.open(abs_path.generic_string().c_str());
+   abs_file.seekp(location, std::ios::beg);
+   char buf[14];
+   abs_file.read(buf, 14);
+   abs_file.write("CORRUPTCORRUPT", 14);
+   abs_file.close();
+   BOOST_CHECK_THROW(db.open( temp.path, database::read_write) , std::runtime_error);
 }
 // BOOST_AUTO_TEST_SUITE_END()
