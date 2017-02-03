@@ -148,56 +148,22 @@ BOOST_AUTO_TEST_CASE( open_and_create )
    BOOST_REQUIRE( !bfs::exists( temp.path / "shared_memory.bin") );
 }
 
-
-void createDatabaseOne( boost::filesystem::path& temp )
-{
-   chainbase::database db;
-   try
-   {
-      db.open( temp, database::read_write, 1024*1024*8 );
-      for(;;)
-      {
-         boost::this_thread::sleep( boost::posix_time::milliseconds( 100 ) );
-      }
-   }
-   catch( boost::thread_interrupted& )
-   {
-      db.close();
-      return;
-   }
-}
-
-
 BOOST_AUTO_TEST_CASE( lock_test ) {
    temp_directory temp;
 
    std::cerr << temp.path.native() << " \n";
-   BOOST_TEST_MESSAGE( "Creating Database in thread 1");
-   boost::thread t(&createDatabaseOne, temp.path);
-   BOOST_TEST_MESSAGE( "Opening Database in thread 2");
    chainbase::database db, db2;
-   BOOST_CHECK_THROW(db.open( temp.path, database::read_write ), boost::exception );
-   t.interrupt();
-   t.join();
-   db.open( temp.path, database::read_write );
-   db2.open( temp.path, database::read_write );
+   db.open( temp.path, database::read_write, 1024*1024*8 );
+   db2.open( temp.path, database::read_only );
    db.with_write_lock( [&](){} );
    BOOST_REQUIRE_EQUAL(db.get_current_lock(), 0 );
 
-   for(int i = 0; i<CHAINBASE_NUM_RW_LOCKS; i++)
+   for(int i = 0; i<CHAINBASE_NUM_RW_LOCKS*2; i++)
    {
-      db.with_write_lock( [&](){
+      db2.with_read_lock( [&](){
             BOOST_REQUIRE_EQUAL(db.get_current_lock(), i % CHAINBASE_NUM_RW_LOCKS);
             BOOST_REQUIRE_EQUAL(db2.get_current_lock(), i % CHAINBASE_NUM_RW_LOCKS);
-            db2.with_write_lock([](){}, 10000);
-      });
-   }
-   for(int i = 0; i<CHAINBASE_NUM_RW_LOCKS; i++)
-   {
-      db.with_read_lock( [&](){
-            BOOST_REQUIRE_EQUAL(db.get_current_lock(), i % CHAINBASE_NUM_RW_LOCKS);
-            BOOST_REQUIRE_EQUAL(db2.get_current_lock(), i % CHAINBASE_NUM_RW_LOCKS);
-            db2.with_write_lock([](){}, 10000);
+            db.with_write_lock([](){}, 10000);
       });
    }
    db.close();
