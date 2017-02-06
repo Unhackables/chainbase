@@ -461,7 +461,7 @@ namespace chainbase {
                undo();
          }
 
-         void set_revision( uint64_t revision )
+         void set_revision( int64_t revision )
          {
             if( _stack.size() != 0 ) BOOST_THROW_EXCEPTION( std::logic_error("cannot set revision while there is an existing undo stack") );
             _revision = revision;
@@ -564,7 +564,7 @@ namespace chainbase {
       public:
          abstract_index( void* i ):_idx_ptr(i){}
          virtual ~abstract_index(){}
-         virtual void     set_revision( uint64_t revision ) = 0;
+         virtual void     set_revision( int64_t revision ) = 0;
          virtual unique_ptr<abstract_session> start_undo_session( bool enabled ) = 0;
 
          virtual int64_t revision()const = 0;
@@ -590,7 +590,7 @@ namespace chainbase {
             return unique_ptr<abstract_session>(new session_impl<typename BaseIndex::session>( _base.start_undo_session( enabled ) ) );
          }
 
-         virtual void     set_revision( uint64_t revision ) override { _base.set_revision( revision ); }
+         virtual void     set_revision( int64_t revision ) override { _base.set_revision( revision ); }
          virtual int64_t  revision()const  override { return _base.revision(); }
          virtual void     undo()const  override { _base.undo(); }
          virtual void     squash()const  override { _base.squash(); }
@@ -729,9 +729,9 @@ namespace chainbase {
          void undo_all();
 
 
-         void set_revision( uint64_t revision )
+         void set_revision( int64_t revision )
          {
-             CHAINBASE_REQUIRE_WRITE_LOCK( "set_revision", uint64_t );
+             CHAINBASE_REQUIRE_WRITE_LOCK( "set_revision", int64_t );
              for( auto i : _index_list ) i->set_revision( revision );
          }
 
