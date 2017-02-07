@@ -205,5 +205,83 @@ const record* dynamic_index::find_by_secondary( int128 secondary )const {
    return nullptr;
 }
 
+const table* dynamic_multi_database::find_table( const string& ddb, const string& tab ) {
+   return get_database( ddb ).find_table( tab );
+}
+
+const table& dynamic_multi_database::get_table( const string& ddb, const string& table ) {
+   auto t = find_table( ddb, table );
+   if( !t )
+      BOOST_THROW_EXCEPTION( std::runtime_error( "unable to find table " + table + " in database " + ddb ) );
+   return *t;
+}
+
+
+const record& dynamic_multi_database::get_by_id( const string& ddb, const string& tablename, uint64_t id ) {
+   auto r = find_by_id( ddb, tablename, id );
+   if( !r ) {
+      BOOST_THROW_EXCEPTION( std::runtime_error( "unable to find record id " + std::to_string( id ) + " in " + ddb + "/" + tablename ) );
+   }
+   return *r;
+}
+
+const record& dynamic_multi_database::get_by_primary( const string& ddb, const string& tablename, int128 primary ) {
+   auto r = find_by_primary( ddb, tablename, primary );
+   if( !r ) {
+      BOOST_THROW_EXCEPTION( std::runtime_error( "unable to find record  in " + ddb + "/" + tablename ) );
+   }
+   return *r;
+}
+const record& dynamic_multi_database::get_by_secondary( const string& ddb, const string& tablename, int128 secondary ) {
+   auto r = find_by_secondary( ddb, tablename, secondary );
+   if( !r ) {
+      BOOST_THROW_EXCEPTION( std::runtime_error( "unable to find record  in " + ddb + "/" + tablename ) );
+   }
+   return *r;
+}
+
+const record* dynamic_multi_database::find_by_id( const string& ddb, const string& tablename, uint64_t id ) {
+   return get_table( ddb, tablename ).find_by_id(id);
+}
+const record* dynamic_multi_database::find_by_primary( const string& ddb, const string& tablename, int128 primary ) {
+   return get_table( ddb, tablename ).find_by_primary(primary);
+}
+const record* dynamic_multi_database::find_by_secondary( const string& ddb, const string& tablename, int128 secondary ) {
+   return get_table( ddb, tablename ).find_by_secondary(secondary);
+}
+
+const record& dynamic_multi_database::create( const string& ddb, const string& tablename, int128 p, int128 s, const vector<char>& v ) {
+  const auto& _ddb = get_database( ddb ); 
+  const auto& _tab = _ddb.get_table( tablename );
+
+  const record* result = nullptr;
+  modify( _ddb, [&]( dynamic_database& d ) {
+    d.modify( _tab, [&]( table& t ) {
+       result = &t.index.create( p, s, v );
+    });
+  });
+  return *result;
+}
+
+void  dynamic_multi_database::update( const string& ddb, const string& tablename, const record& rec, int128 p, int128 s, const vector<char>& v ) {
+  const auto& _ddb = get_database( ddb ); 
+  const auto& _tab = _ddb.get_table( tablename );
+
+  modify( _ddb, [&]( dynamic_database& d ) {
+    d.modify( _tab, [&]( table& t ) {
+       t.index.modify( rec, [&]( record& r ) {
+          r.primary_key = p;
+          r.secondary_key = s;
+          r.value.resize( v.size() );
+          if( v.size() )
+             memcpy( r.value.data(), v.data(), v.size() );
+       });
+    });
+  });
+}
+
+void  dynamic_multi_database::remove( const string& ddb, const string& tablename, const record& rec ) {
+
+}
 
 }

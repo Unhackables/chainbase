@@ -154,9 +154,23 @@ BOOST_AUTO_TEST_CASE( dynamic_open_and_create ) {
           });
       });
 
+      const auto& c = db.create( "test", "balances", 4, 3, {'d'} );
+      
+
+      std::cout << "c.id: " << c.id <<"\n";
+
       const auto& t = db.get_database("test").get_table( "balances" );
       const auto& r = t.index.get_by_primary( 1 );
+      const auto& c2  = t.index.get_by_primary( 4 );
+      const auto& c5  = t.index.get_by_secondary( 3 );
+      const auto& c4  = t.index.get_by_id( 2 );
       std::cout << r.primary_key << " " << r.secondary_key << " " << r.value.size() <<"\n";
+      std::cout << c.primary_key << " " << c.secondary_key << " " << c.value.size() <<"\n";
+      std::cout << c2.primary_key << " " << c2.secondary_key << " " << c2.value.size() <<"\n";
+
+      BOOST_REQUIRE( &c == &c2 );
+      BOOST_REQUIRE( &c == &c4 );
+      BOOST_REQUIRE( &c == &c5 );
 
       bfs::remove_all( temp );
    } catch ( ... ) {

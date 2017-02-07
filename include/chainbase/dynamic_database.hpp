@@ -101,8 +101,8 @@ typedef shared_multi_index_container <
     >,
     ordered_unique< tag< by_secondary_primary_id >, 
       composite_key< record,
-         member< record, int128, &record::primary_key >,
          member< record, int128, &record::secondary_key >,
+         member< record, int128, &record::primary_key >,
          member< record, uint32_t, &record::id >
       >,
       composite_key_compare< secondary_compare, primary_compare, std::less<uint32_t> >
@@ -197,6 +197,14 @@ struct table {
       c( *this );
    }
 
+   const record& get_by_id( uint32_t id )const { return index.get_by_id(id); }
+   const record& get_by_primary( int128 primary )const { return index.get_by_primary(primary); }
+   const record& get_by_secondary( int128 secondary )const{ return index.get_by_secondary(secondary); }
+
+   const record* find_by_id( uint32_t id )const { return index.find_by_id(id); }
+   const record* find_by_primary( int128 primary )const { return index.find_by_primary(primary); }
+   const record* find_by_secondary( int128 secondary )const{ return index.find_by_secondary(secondary); }
+
    shared_string name;
    dynamic_index index;
 };
@@ -274,13 +282,28 @@ class dynamic_multi_database {
       const dynamic_database& get_database( const string& name )const;
       const dynamic_database* find_database( const string& name )const;
 
+      const table* find_table( const string& ddb, const string& table );
+      const table& get_table( const string& ddb, const string& table );
+
       template<typename Lambda>
       void modify( const dynamic_database& db, Lambda&& l ) {
          auto ok = _indices->modify( _indices->iterator_to(db), std::forward<Lambda>(l) );
          if( !ok ) BOOST_THROW_EXCEPTION( std::logic_error( "Could not modify object, most likely a uniqueness constraint was violated" ) );
       }
 
-      void                    remove_database( const string& name );
+
+      const record& create( const string& ddb, const string& tablename, int128 p, int128 s, const vector<char>& v );
+      void  update( const string& ddb, const string& tablename, const record& rec, int128 p, int128 s, const vector<char>& v );
+      void  remove( const string& ddb, const string& tablename, const record& rec );
+
+      const record& get_by_id( const string& ddb, const string& tablename, uint64_t id );
+      const record& get_by_primary( const string& ddb, const string& tablename, int128 primary );
+      const record& get_by_secondary( const string& ddb, const string& tablename, int128 secondary );
+      const record* find_by_id( const string& ddb, const string& tablename, uint64_t id );
+      const record* find_by_primary( const string& ddb, const string& tablename, int128 primary );
+      const record* find_by_secondary( const string& ddb, const string& tablename, int128 secondary );
+
+      void remove_database( const string& name );
 
       template< typename Lambda >
       auto with_write_lock( Lambda&& callback, uint64_t wait_micro = 1000000 ) -> decltype( (*(Lambda*)nullptr)() );
