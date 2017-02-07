@@ -221,7 +221,7 @@ namespace chainbase {
          template<typename Modifier>
          void modify( const value_type& obj, Modifier&& m ) {
             on_modify( obj );
-            auto ok = _indices.modify( _indices.iterator_to( obj ), m );
+            auto ok = _indices.modify( _indices.iterator_to( obj ), std::forward<Modifier>(m) );
             if( !ok ) BOOST_THROW_EXCEPTION( std::logic_error( "Could not modify object, most likely a uniqueness constraint was violated" ) );
          }
 

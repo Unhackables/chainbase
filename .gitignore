@@ -1,0 +1,12 @@
+.DS_Store
+CMakeCache.txt
+CMakeFiles/
+Makefile
+cmake_install.cmake
+compile_commands.json
+libchainbase.a
+test/.DS_Store
+test/CMakeFiles/
+test/Makefile
+test/chainbase_test
+test/cmake_install.cmake

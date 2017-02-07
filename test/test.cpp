@@ -7,6 +7,8 @@
 #include <boost/multi_index/ordered_index.hpp>
 #include <boost/multi_index/member.hpp>
 
+#include <chainbase/dynamic_database.hpp>
+
 #include <iostream>
 
 using namespace chainbase;
@@ -130,6 +132,33 @@ BOOST_AUTO_TEST_CASE( open_and_create ) {
 
       BOOST_REQUIRE_EQUAL( new_book.a, copy_new_book.a );
       BOOST_REQUIRE_EQUAL( new_book.b, copy_new_book.b );
+      bfs::remove_all( temp );
+   } catch ( ... ) {
+      bfs::remove_all( temp );
+      throw;
+   }
+}
+
+BOOST_AUTO_TEST_CASE( dynamic_open_and_create ) {
+   boost::filesystem::path temp = boost::filesystem::unique_path();
+   try {
+      dynamic_multi_database db;
+      BOOST_CHECK_THROW( db.open( temp ), std::runtime_error ); /// temp does not exist
+      db.open( temp, database::read_write, 1024*1024*2 );
+
+      const auto& testdb = db.create_database( "test" );
+      db.modify( testdb, [&]( dynamic_database& ddb ) {
+          const auto& baltable = ddb.create_table( "balances" );
+          ddb.modify( baltable, [&]( table& t ) {
+             const auto& rec = t.index.create( 1, 2, { 'a', 'b', 'c' } );
+          });
+      });
+
+      const auto& t = db.get_database("test").get_table( "balances" );
+      const auto& r = t.index.get_by_primary( 1 );
+      std::cout << r.primary_key << " " << r.secondary_key << " " << r.value.size() <<"\n";
+
+      bfs::remove_all( temp );
    } catch ( ... ) {
       bfs::remove_all( temp );
       throw;

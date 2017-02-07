@@ -25,8 +25,17 @@
  */
 #pragma once
 #include <chainbase/chainbase.hpp>
+#include <boost/multiprecision/cpp_int.hpp>
+
+#include <boost/multi_index/composite_key.hpp>
+#include <boost/multi_index/member.hpp>
+#include <boost/multi_index/ordered_index.hpp>
+#include <boost/multi_index/mem_fun.hpp>
 
 namespace chainbase {
+
+using namespace boost::multi_index;
+using std::string;
 
 typedef boost::multiprecision::int128_t int128;
 typedef vector<char>                    value_type;
@@ -42,7 +51,7 @@ enum comparison_type {
 struct record_header {
    uint8_t      primary_compare   = integer_compare;
    uint8_t      secondary_compare = integer_compare;
-}
+};
 
 class dynamic_index;
 
@@ -54,22 +63,24 @@ struct record : protected record_header {
       c( *this );
    }
 
-   uint64_t            id = 0;
-   int128_t            primary_key;
-   int128_t            secondary_key;
+   uint32_t            id = 0;
+   int128              primary_key;
+   int128              secondary_key;
    shared_value_type   value;
 
    friend class dynamic_index; /// allow index access to protected record header
 };
 
 struct primary_compare {
-   bool operator()( const record& a, const record& b)const {
-      return a.primary_key < b.primary_key;
+   bool operator()( const int128& a, const int128 & b)const {
+      /// TODO: use offset to find comparison type
+      return a < b;
    }
 };
 struct secondary_compare {
-   bool operator()( const record& a, const record& b)const {
-      return a.secondary_key < b.secondary_key;
+   bool operator()( const int128& a, const int128& b)const {
+      /// TODO: use offset to find comparison type
+      return a < b;
    }
 };
 
@@ -79,23 +90,24 @@ struct by_secondary_primary_id;
 typedef shared_multi_index_container <
   record,
   indexed_by<
-    ordered_unique< tag< by_id >, member< record, uint64_t, &record::id > >,
+    ordered_unique< tag< by_id >, member< record, uint32_t, &record::id > >,
     ordered_unique< tag< by_primary_secondary_id >, 
       composite_key< record,
-         member< record, int128_t, &record::primary_key >
-         member< record, int128_t, &record::secondary_key >
-         member< record, uint64_t, &record::id >
+         member< record, int128, &record::primary_key >,
+         member< record, int128, &record::secondary_key >,
+         member< record, uint32_t, &record::id >
       >,
-      composite_key_compare< primary_compare<int128>, secondary_compare<int128>, std::less<uint64_t> >
+      composite_key_compare< primary_compare, secondary_compare, std::less<uint32_t> >
     >,
     ordered_unique< tag< by_secondary_primary_id >, 
       composite_key< record,
-         member< record, int128_t, &record::primary_key >
-         member< record, int128_t, &record::secondary_key >
-         member< record, uint64_t, &record::id >
+         member< record, int128, &record::primary_key >,
+         member< record, int128, &record::secondary_key >,
+         member< record, uint32_t, &record::id >
       >,
-      composite_key_compare< secondary_compare<int128>, primary_compare<int128>, std::less<uint64_t> >
+      composite_key_compare< secondary_compare, primary_compare, std::less<uint32_t> >
     >
+  >
 > record_index;
 
 
@@ -108,14 +120,18 @@ class dynamic_index {
 
       ~dynamic_index();
 
-      const record& create( int128 primary, int128 secondary, const value_type& value ) {
+      const record& create( int128 primary, int128 secondary, const vector<char>& value ) {
          auto new_id = _next_id;
          auto constructor = [&]( record& rec ) {
             rec.primary_compare   = _primary_compare;
             rec.secondary_compare = _secondary_compare;
-            rec.id = id;
-            c( rec );
-         }
+            rec.id = new_id;
+            rec.primary_key   = primary;
+            rec.secondary_key = secondary;
+            rec.value.resize( value.size() );
+            memcpy( rec.value.data(), value.data(), value.size() );
+         };
+
          auto insert_result = _indices.emplace( constructor, _indices.get_allocator() );
 
          if( !insert_result.second ) {
@@ -146,12 +162,16 @@ class dynamic_index {
 
       void  remove( const record& rec ) {
          on_remove(rec);
-         _indicies.erase( _indicies.iterator_to( rec ) );
+         _indices.erase( _indices.iterator_to( rec ) );
       }
 
-      const record* find( uint64_t id );
-      const record* find_primary( int128 primary );
-      const record* find_secondary( int128 secondary );
+      const record& get_by_id( uint32_t id )const;
+      const record& get_by_primary( int128 primary )const;
+      const record& get_by_secondary( int128 secondary )const;
+
+      const record* find_by_id( uint32_t id )const;
+      const record* find_by_primary( int128 primary )const; 
+      const record* find_by_secondary( int128 secondary )const;
 
    private:
       void on_modify( const record& rec ) {
@@ -166,8 +186,8 @@ class dynamic_index {
       comparison_type _primary_compare   = integer_compare;
       comparison_type _secondary_compare = integer_compare;
 
-      record_index _indicies;
-
+      record_index _indices;
+      uint32_t     _next_id = 1;
 };
 
 struct table {
@@ -182,12 +202,12 @@ struct table {
 };
 
 struct by_name;
-typedef shared_multi_index_container {
+typedef shared_multi_index_container <
    table,
    indexed_by<
-      ordered_unique< tag<by_name>, member< table, shared_string, &table::name > >
+      ordered_unique< tag<by_name>, member< table, shared_string, &table::name >, strcmp_less >
    >
-} table_index;
+> table_index;
 
 /**
  *  A dynamic database has an arbitrary number of named tables, each table has 
@@ -201,23 +221,66 @@ typedef shared_multi_index_container {
  */
 class dynamic_database {
    public:
-      template<typename T>
-      dynamic_database( allocator<T> a )
-      :tables(a) {
+      template<typename Constructor, typename Allocator>
+      dynamic_database( Constructor&& c, Allocator&& a )
+      :_tables(a.get_segment_manager()),_name(a.get_segment_manager()) {
+         c(*this);
       }
 
-   private:
-      table_index _tables;
+      const table& create_table( const string& name );
+      const table& get_table( const string& name )const;
+      const table* find_table( const string& name )const;
 
+      template<typename Lambda>
+      void modify( const table& db, Lambda&& l ) {
+         auto ok = _tables.modify( _tables.iterator_to(db), std::forward<Lambda>(l) );
+         if( !ok ) BOOST_THROW_EXCEPTION( std::logic_error( "Could not modify object, most likely a uniqueness constraint was violated" ) );
+      }
+
+      void remove_table( const string& name );
+
+      table_index   _tables;
+      shared_string _name;
 };
+
+
+typedef shared_multi_index_container <
+  dynamic_database,
+  indexed_by<
+    ordered_unique< tag<by_name>, member< dynamic_database, shared_string, &dynamic_database::_name >, strcmp_less >
+  >
+> dynamic_database_index;
 
 
 /**
  * Maintains a collection of dynamic databases allocated in a shared memory file. This is the class
  * responsible for allocating/resizing the database file.  
  */
-class multi_dynamic_database {
+class dynamic_multi_database {
    public:
+      enum open_flags {
+         read_only     = 0,
+         read_write    = 1
+      };
+
+
+      dynamic_multi_database();
+      ~dynamic_multi_database();
+
+      void open( const bfs::path& dir, uint32_t write = read_only, uint64_t shared_file_size = 0 );
+      void close();
+
+      const dynamic_database& create_database( const string& name );
+      const dynamic_database& get_database( const string& name )const;
+      const dynamic_database* find_database( const string& name )const;
+
+      template<typename Lambda>
+      void modify( const dynamic_database& db, Lambda&& l ) {
+         auto ok = _indices->modify( _indices->iterator_to(db), std::forward<Lambda>(l) );
+         if( !ok ) BOOST_THROW_EXCEPTION( std::logic_error( "Could not modify object, most likely a uniqueness constraint was violated" ) );
+      }
+
+      void                    remove_database( const string& name );
 
       template< typename Lambda >
       auto with_write_lock( Lambda&& callback, uint64_t wait_micro = 1000000 ) -> decltype( (*(Lambda*)nullptr)() );
@@ -227,8 +290,9 @@ class multi_dynamic_database {
 
    private:
       /// allocated in shared memory segment
-      dynamic_database_index*                                     _indicies;
+      dynamic_database_index*                                     _indices = nullptr;
 
+      bfs::path                                                   _data_dir;
       unique_ptr<bip::managed_mapped_file>                        _segment;
       unique_ptr<bip::managed_mapped_file>                        _meta;
       read_write_mutex_manager*                                   _rw_manager = nullptr;
